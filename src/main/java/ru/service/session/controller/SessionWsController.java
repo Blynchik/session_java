@@ -12,12 +12,9 @@ import org.springframework.web.server.ResponseStatusException;
 import ru.service.session.config.common.ServerProperties;
 import ru.service.session.config.security.JwtUser;
 import ru.service.session.config.websocket.WebSocketProxy;
-import ru.service.session.dto.exception.ExceptionInfo;
 import ru.service.session.dto.exception.ExceptionResponse;
 import ru.service.session.facade.SessionFacade;
-import ru.service.session.util.ExceptionHandlerUtil;
 
-import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 import static ru.service.session.util.ExceptionHandlerUtil.*;
@@ -30,6 +27,12 @@ public class SessionWsController {
     private final WebSocketProxy webSocketProxy;
     private final ServerProperties serverProperties;
     private final ObjectMapper objectMapper;
+
+    //todo
+    // тесты на null решение
+    // на решение без события
+    // добавить уникальный идентификатор текущего события, чтобы различать на UI
+    // добавить в ответ тип ответа, чтобы различать типы ответов на UI
 
     @Autowired
     public SessionWsController(SessionFacade sessionFacade,
@@ -63,7 +66,7 @@ public class SessionWsController {
     @SendToUser("/topic/error")
     public ExceptionResponse handleException(Exception e) {
         logException(e);
-        if(e instanceof ResponseStatusException){
+        if (e instanceof ResponseStatusException) {
             return deserializeExceptionResponseFromResponseStatusException(e, objectMapper, this::handleException);
         }
         return new ExceptionResponse(getExceptionInfoList(e), serverProperties.getName(), serverProperties.getPort());

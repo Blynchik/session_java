@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import ru.service.session.dto.event.internal.DecisionResponse;
 import ru.service.session.dto.event.internal.DecisionResultResponse;
 import ru.service.session.dto.event.internal.DecisionType;
+import ru.service.session.dto.hero.HeroResponse;
 import ru.service.session.service.attributeCheck.TryData;
 
 @AllArgsConstructor
@@ -20,6 +21,7 @@ public class DecisionResultWsResponse {
     private String resultDescr;
     private Boolean result;
     private Integer value;
+    private HeroResponse heroResponse;
 
     public DecisionResultWsResponse(DecisionResponse decision, DecisionResultResponse decisionResult, TryData tryData) {
         this.decisionType = decision.getDecisionType();

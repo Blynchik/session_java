@@ -41,9 +41,9 @@ public class ClientErrorDecoder implements ErrorDecoder {
         try {
             //feignClient не декодирует тело данных ошибок
             if (response.status() == 401 || response.status() == 403) {
-                errorBody = objectMapper.writeValueAsString(
+                errorBody = new ObjectMapper().writeValueAsString(
                         new ExceptionResponse(List.of(new ExceptionInfo("", "", "Authorization or authentication error")),
-                                serverProperties.getName(), serverProperties.getPort()));
+                               "", ""));
             } else {
                 errorBody = new BufferedReader(new InputStreamReader(response.body().asInputStream()))
                         .lines().collect(Collectors.joining("\n"));

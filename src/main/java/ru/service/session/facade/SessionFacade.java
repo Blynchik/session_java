@@ -2,7 +2,6 @@ package ru.service.session.facade;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import ru.service.session.client.EventApi;
@@ -12,11 +11,13 @@ import ru.service.session.config.websocket.WebSocketProxy;
 import ru.service.session.dto.event.internal.DecisionResponse;
 import ru.service.session.dto.event.internal.EventResponse;
 import ru.service.session.dto.event.ws.DecisionResultWsResponse;
+import ru.service.session.dto.event.ws.EventProcessWsResponse;
 import ru.service.session.dto.event.ws.EventWsResponse;
 import ru.service.session.dto.hero.HeroResponse;
 import ru.service.session.model.EventSession;
 import ru.service.session.service.EventProcessingService;
 import ru.service.session.service.EventSessionService;
+import ru.service.session.service.JwtService;
 import ru.service.session.util.exception.EntityNotFoundException;
 
 import java.util.concurrent.ExecutionException;
@@ -35,6 +36,7 @@ public class SessionFacade {
     private final EventProcessingService eventProcessingService;
     private final ScheduledExecutorService scheduler;
     private final SessionVariables sessionVariables;
+    private final JwtService jwtService;
 
     @Autowired
     public SessionFacade(EventApi eventApi,
@@ -42,7 +44,8 @@ public class SessionFacade {
                          WebSocketProxy webSocketProxy,
                          EventSessionService eventSessionService,
                          EventProcessingService eventProcessingService,
-                         SessionVariables sessionVariables) {
+                         SessionVariables sessionVariables,
+                         JwtService jwtService) {
         this.eventApi = eventApi;
         this.heroApi = heroApi;
         this.webSocketProxy = webSocketProxy;
@@ -50,6 +53,7 @@ public class SessionFacade {
         this.eventProcessingService = eventProcessingService;
         this.scheduler = Executors.newScheduledThreadPool(10);
         this.sessionVariables = sessionVariables;
+        this.jwtService = jwtService;
     }
 
     public void setChosenDecisionInCurrentEvent(String userId, String chosenDecisionId) {
@@ -76,10 +80,30 @@ public class SessionFacade {
         EventResponse event = eventResponse.getBody();
         EventSession eventSession = eventSessionService.create(userId, event, hero);
         webSocketProxy.sendMessage(userId, "/topic/event", new EventWsResponse(eventSession.getEvent()));
+        long startTime = System.currentTimeMillis();
+        scheduler.scheduleAtFixedRate(()-> {
+            long elapsedTime = System.currentTimeMillis() - startTime;
+            double fractionElapsed = (double) elapsedTime / sessionVariables.getDuration();
+
+            // Отправка оставшейся доли времени
+            if (fractionElapsed < 1.1) {
+                webSocketProxy.sendMessage(userId, "/topic/event", new EventProcessWsResponse(fractionElapsed));
+            }
+        }, 1, 1, TimeUnit.SECONDS);
+
         DecisionResultWsResponse decisionResultWsResponse =
                 scheduler.schedule(() -> {
                     EventSession actualSession = eventSessionService.get(userId);
-                    return eventProcessingService.processEvent(actualSession.getDecision(), actualSession.getEvent(), actualSession.getHero());
+                    DecisionResultWsResponse wsResponse = eventProcessingService.processEvent(actualSession.getDecision(), actualSession.getEvent(), actualSession.getHero());
+                    String ownToken = jwtService.generateOwnToken();
+                    ResponseEntity<HeroResponse> afterEventHero = wsResponse.getResult() ?
+                            wsResponse.getDecisionType().increaseAttribute("Bearer " + ownToken, userId, heroApi) :
+                            wsResponse.getDecisionType().decreaseAttribute("Bearer " + ownToken, userId, heroApi);
+                    if (afterEventHero == null) {
+                        afterEventHero = heroResponse;
+                    }
+                    wsResponse.setHeroResponse(afterEventHero.getBody());
+                    return wsResponse;
                 }, sessionVariables.getDuration(), TimeUnit.MILLISECONDS).get();
         eventSessionService.remove(userId);
         webSocketProxy.sendMessage(userId, "/topic/event", decisionResultWsResponse);
